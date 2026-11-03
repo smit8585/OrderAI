@@ -1,0 +1,146 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum PaymentMode {
+  COD
+  PREPAID
+}
+
+enum AddressStatus {
+  VALID
+  AMBIGUOUS
+  UNKNOWN
+}
+
+enum OrderStatus {
+  NEW              // fetched, nobody has called yet
+  CALLING          // a call is in progress
+  CONFIRMED        // customer confirmed the order and the address
+  ADDRESS_UPDATED  // customer gave a new address
+  CANCEL_REQUESTED // customer wants to cancel; a person decides
+  NO_ANSWER        // call did not connect
+  NEEDS_REVIEW     // the call ended without a clear answer
+}
+
+enum CallStatus {
+  INITIATED
+  RINGING
+  COMPLETED
+  NO_ANSWER
+  BUSY
+  FAILED
+}
+
+enum CallOutcome {
+  CONFIRMED
+  ADDRESS_CORRECTED
+  CANCEL_ORDER
+  NOT_ANSWERED
+  VOICEMAIL
+  UNCLEAR
+}
+
+enum Provider {
+  SHIPROCKET
+  VOICE
+}
+
+model Setting {
+  id                Int      @id
+  language          String   @default("en") // en | hi
+  autoUpdate        Boolean  @default(false) // push a corrected address to Shiprocket without asking
+  updatedAt         DateTime @updatedAt
+}
+
+model Connection {
+  provider      Provider @id
+  config        Json     @default("{}")
+  secretEnc     String
+  verified      Boolean  @default(false)
+  accountLabel  String?
+  lastCheckedAt DateTime?
+  lastError     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model KeyValue {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model Order {
+  id             String        @id @default(cuid())
+  externalId     String        @unique // Shiprocket order id (or SAMPLE-n)
+  orderName      String        // channel order id shown to the merchant
+  customerName   String
+  phone          String
+  email          String?
+  address1       String
+  address2       String?
+  city           String
+  state          String
+  pincode        String
+  paymentMode    PaymentMode
+  amount         Decimal       @db.Decimal(12, 2)
+  items          Json          @default("[]") // [{name, quantity, price}]
+  channelStatus  String        @default("New") // status shown in Shiprocket
+  orderedAt      DateTime
+  addressStatus  AddressStatus @default(UNKNOWN)
+  addressReasons Json          @default("[]")
+  addressSource  String        @default("check") // shiprocket | check
+  status         OrderStatus   @default(NEW)
+  isSample       Boolean       @default(false)
+  syncState      String        @default("NONE") // NONE | PENDING | APPLIED | FAILED
+  syncError      String?
+  originalAddress Json?
+  raw            Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  calls          Call[]
+  events         OrderEvent[]
+
+  @@index([status, orderedAt])
+  @@index([addressStatus])
+}
+
+model Call {
+  id             String      @id @default(cuid())
+  orderId        String
+  order          Order       @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  provider       String      // web | voice
+  mode           String      @default("WEB")
+  status         CallStatus  @default(INITIATED)
+  outcome        CallOutcome?
+  language       String?
+  providerCallId String?     @unique
+  toNumber       String?
+  transcript     String?
+  summary        String?
+  extracted      Json?
+  recordingUrl   String?
+  durationSec    Int?
+  startedAt      DateTime    @default(now())
+  endedAt        DateTime?
+
+  @@index([orderId, startedAt])
+}
+
+model OrderEvent {
+  id        String   @id @default(cuid())
+  orderId   String
+  order     Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  type      String   // CALL_PLACED | CALL_RESULT | ADDRESS_UPDATED | SHIPROCKET | NOTE
+  message   String
+  createdAt DateTime @default(now())
+
+  @@index([orderId, createdAt])
+}
