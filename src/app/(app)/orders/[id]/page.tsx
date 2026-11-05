@@ -61,7 +61,7 @@ export default async function OrderDetail({ params, searchParams }: { params: Pr
             <header><h2 id="order">Order</h2></header>
             <dl className="kv">
               <dt>Customer</dt><dd>{o.customerName}</dd>
-              <dt>Phone</dt><dd><a href={`tel:+91${o.phone.replace(/\D/g, "").slice(-10)}`}>{o.phone.replace(/\D/g, "").slice(-10) || o.phone}</a></dd>
+              <dt>Phone</dt><dd>{o.phone.replace(/\D/g, "").slice(-10) || o.phone}</dd>
               {o.email && (<><dt>Email</dt><dd>{o.email}</dd></>)}
               <dt>Items</dt><dd>{items.map((i) => `${i.name} × ${i.quantity}`).join(", ") || "–"}</dd>
               <dt>Payment</dt><dd>{o.paymentMode === "COD" ? "Cash on delivery" : "Prepaid"} · {inr(o.amount.toString())}</dd>

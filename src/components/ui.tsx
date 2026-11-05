@@ -2,6 +2,7 @@ import type { AddressStatus, CallStatus, OrderStatus } from "@prisma/client";
 import { ADDRESS_LABEL, ADDRESS_TONE, STATUS_LABEL, STATUS_TONE } from "@/lib/format";
 
 export function StatusDot({ status }: { status: OrderStatus }) {
+  if (status === "NEW") return <span className="muted">–</span>;
   return <span className={`status ${STATUS_TONE[status]}`}>{STATUS_LABEL[status]}</span>;
 }
 

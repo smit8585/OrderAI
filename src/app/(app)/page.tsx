@@ -10,10 +10,13 @@ export const metadata = { title: "Orders" };
 
 const TABS: Array<{ key: string; label: string; where?: Prisma.OrderWhereInput }> = [
   { key: "all", label: "All orders" },
-  { key: "check", label: "Address needs checking", where: { addressStatus: "AMBIGUOUS", status: { in: ["NEW", "NO_ANSWER", "NEEDS_REVIEW"] } } },
-  { key: "new", label: "Not called yet", where: { status: "NEW" } },
-  { key: "done", label: "Confirmed", where: { status: { in: ["CONFIRMED", "ADDRESS_UPDATED"] } } },
-  { key: "attn", label: "Needs you", where: { status: { in: ["CANCEL_REQUESTED", "NEEDS_REVIEW", "NO_ANSWER"] } } },
+  { key: "valid", label: "Valid address", where: { addressStatus: "VALID" } },
+  { key: "modified", label: "Modified", where: { status: "ADDRESS_UPDATED" } },
+  {
+    key: "needs",
+    label: "Needs you",
+    where: { OR: [{ addressStatus: "AMBIGUOUS", status: { not: "ADDRESS_UPDATED" } }, { status: { in: ["CANCEL_REQUESTED", "NEEDS_REVIEW", "NO_ANSWER"] } }] },
+  },
 ];
 const PAGE = 25;
 
@@ -25,7 +28,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const search: Prisma.OrderWhereInput = q
     ? { OR: [{ orderName: { contains: q, mode: "insensitive" } }, { customerName: { contains: q, mode: "insensitive" } }, { phone: { contains: q.replace(/\D/g, "") || "__none__" } }, { pincode: { contains: q } }, { city: { contains: q, mode: "insensitive" } }] }
     : {};
-  const statusF = sp.status && sp.status in STATUS_LABEL ? (sp.status as OrderStatus) : undefined;
+  const statusF = sp.status && sp.status !== "NEW" && sp.status in STATUS_LABEL ? (sp.status as OrderStatus) : undefined;
   const addressF = sp.address && sp.address in ADDRESS_LABEL ? (sp.address as AddressStatus) : undefined;
   const paymentF = sp.payment === "COD" || sp.payment === "PREPAID" ? sp.payment : undefined;
   const channelF = sp.sr || undefined;
@@ -94,7 +97,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         {tab.key !== "all" && <input type="hidden" name="tab" value={tab.key} />}
         <div className="field"><label htmlFor="f-q">Search</label><input id="f-q" name="q" defaultValue={q} placeholder="Order, customer, phone, city, pincode" /></div>
         <div className="field"><label htmlFor="f-status">OrderAI status</label>
-          <select id="f-status" name="status" defaultValue={statusF ?? ""}><option value="">Any</option>{Object.entries(STATUS_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+          <select id="f-status" name="status" defaultValue={statusF ?? ""}><option value="">Any</option>{Object.entries(STATUS_LABEL).filter(([k]) => k !== "NEW").map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
         <div className="field"><label htmlFor="f-address">Address</label>
           <select id="f-address" name="address" defaultValue={addressF ?? ""}><option value="">Any</option>{Object.entries(ADDRESS_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
         <div className="field"><label htmlFor="f-payment">Payment</label>
@@ -137,7 +140,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                       <span className="sec">{dateTime(o.orderedAt)}</span>
                       <span className="sec">{items}</span>
                     </td>
-                    <td>{o.customerName}<span className="sec"><a href={`tel:+91${o.phone.replace(/\D/g, "").slice(-10)}`}>{o.phone.replace(/\D/g, "").slice(-10) || o.phone}</a></span></td>
+                    <td>{o.customerName}<span className="sec">{o.phone.replace(/\D/g, "").slice(-10) || o.phone}</span></td>
                     <td style={{ maxWidth: 280 }}>
                       <span title={ADDRESS_LABEL[o.addressStatus]}><AddressTag status={o.addressStatus} /></span>
                       <span className="sec">{[o.address1, o.city, o.pincode].filter(Boolean).join(", ")}</span>

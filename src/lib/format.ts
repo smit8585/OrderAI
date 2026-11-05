@@ -4,7 +4,7 @@ export const STATUS_LABEL: Record<OrderStatus, string> = {
   NEW: "Not called yet",
   CALLING: "On a call",
   CONFIRMED: "Confirmed",
-  ADDRESS_UPDATED: "Address updated",
+  ADDRESS_UPDATED: "Modified",
   CANCEL_REQUESTED: "Wants to cancel",
   NO_ANSWER: "No answer",
   NEEDS_REVIEW: "Needs review",
