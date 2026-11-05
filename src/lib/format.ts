@@ -20,7 +20,7 @@ export const STATUS_TONE: Record<OrderStatus, string> = {
   NEEDS_REVIEW: "attn",
 };
 
-export const ADDRESS_LABEL: Record<AddressStatus, string> = { VALID: "Valid", AMBIGUOUS: "Ambiguous", UNKNOWN: "Not checked" };
+export const ADDRESS_LABEL: Record<AddressStatus, string> = { VALID: "Valid", AMBIGUOUS: "Invalid", UNKNOWN: "Not checked" };
 export const ADDRESS_TONE: Record<AddressStatus, string> = { VALID: "good", AMBIGUOUS: "attn", UNKNOWN: "" };
 
 export const OUTCOME_LABEL: Record<CallOutcome, string> = {

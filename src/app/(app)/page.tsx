@@ -11,6 +11,7 @@ export const metadata = { title: "Orders" };
 const TABS: Array<{ key: string; label: string; where?: Prisma.OrderWhereInput }> = [
   { key: "all", label: "All orders" },
   { key: "valid", label: "Valid address", where: { addressStatus: "VALID" } },
+  { key: "invalid", label: "Invalid address", where: { addressStatus: "AMBIGUOUS" } },
   { key: "modified", label: "Modified", where: { status: "ADDRESS_UPDATED" } },
   {
     key: "needs",
