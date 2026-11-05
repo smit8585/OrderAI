@@ -1,7 +1,7 @@
 import Link from "next/link";
-import type { Prisma } from "@prisma/client";
+import type { AddressStatus, OrderStatus, Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
-import { ADDRESS_LABEL, dateTime, inr, maskPhone } from "@/lib/format";
+import { ADDRESS_LABEL, STATUS_LABEL, dateTime, inr } from "@/lib/format";
 import { AddressTag, StatusDot } from "@/components/ui";
 import { OrdersToolbar } from "@/components/client";
 import { liveStatus } from "@/services/connections";
@@ -23,22 +23,50 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
   const page = Math.max(1, Number(sp.page) || 1);
   const q = (sp.q ?? "").trim();
   const search: Prisma.OrderWhereInput = q
-    ? { OR: [{ orderName: { contains: q, mode: "insensitive" } }, { customerName: { contains: q, mode: "insensitive" } }, { phone: { contains: q.replace(/\D/g, "") || "__none__" } }] }
+    ? { OR: [{ orderName: { contains: q, mode: "insensitive" } }, { customerName: { contains: q, mode: "insensitive" } }, { phone: { contains: q.replace(/\D/g, "") || "__none__" } }, { pincode: { contains: q } }, { city: { contains: q, mode: "insensitive" } }] }
     : {};
-  const where: Prisma.OrderWhereInput = { AND: [search, tab.where ?? {}] };
+  const statusF = sp.status && sp.status in STATUS_LABEL ? (sp.status as OrderStatus) : undefined;
+  const addressF = sp.address && sp.address in ADDRESS_LABEL ? (sp.address as AddressStatus) : undefined;
+  const paymentF = sp.payment === "COD" || sp.payment === "PREPAID" ? sp.payment : undefined;
+  const channelF = sp.sr || undefined;
+  const stateF = sp.state || undefined;
+  const dayStart = (d: string) => (/^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(`${d}T00:00:00+05:30`) : undefined);
+  const from = dayStart(sp.from ?? "");
+  const toRaw = dayStart(sp.to ?? "");
+  const to = toRaw ? new Date(toRaw.getTime() + 86_400_000) : undefined;
+  const filters: Prisma.OrderWhereInput = {
+    ...(statusF ? { status: statusF } : {}),
+    ...(addressF ? { addressStatus: addressF } : {}),
+    ...(paymentF ? { paymentMode: paymentF } : {}),
+    ...(channelF ? { channelStatus: channelF } : {}),
+    ...(stateF ? { state: stateF } : {}),
+    ...(from || to ? { orderedAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) } } : {}),
+  };
+  const SORTS: Record<string, { label: string; by: Prisma.OrderOrderByWithRelationInput[] }> = {
+    num_desc: { label: "Order number, high to low", by: [{ orderSeq: { sort: "desc", nulls: "last" } }, { orderedAt: "desc" }] },
+    num_asc: { label: "Order number, low to high", by: [{ orderSeq: { sort: "asc", nulls: "last" } }, { orderedAt: "asc" }] },
+    new: { label: "Newest first", by: [{ orderedAt: "desc" }] },
+    old: { label: "Oldest first", by: [{ orderedAt: "asc" }] },
+    amount: { label: "Amount, high to low", by: [{ amount: "desc" }] },
+  };
+  const sortKey = sp.sort && sp.sort in SORTS ? sp.sort : "num_desc";
+  const where: Prisma.OrderWhereInput = { AND: [search, filters, tab.where ?? {}] };
+  const activeFilters = [statusF, addressF, paymentF, channelF, stateF, sp.from, sp.to].filter(Boolean).length;
 
-  const [rows, total, live, totalAll, counts] = await Promise.all([
-    db.order.findMany({ where, orderBy: { orderedAt: "desc" }, skip: (page - 1) * PAGE, take: PAGE }),
+  const [rows, total, live, totalAll, counts, channels, states] = await Promise.all([
+    db.order.findMany({ where, orderBy: SORTS[sortKey].by, skip: (page - 1) * PAGE, take: PAGE }),
     db.order.count({ where }),
     liveStatus(),
     db.order.count(),
-    Promise.all(TABS.map((t) => db.order.count({ where: { AND: [search, t.where ?? {}] } }))),
+    Promise.all(TABS.map((t) => db.order.count({ where: { AND: [search, filters, t.where ?? {}] } }))),
+    db.order.findMany({ distinct: ["channelStatus"], select: { channelStatus: true }, orderBy: { channelStatus: "asc" } }),
+    db.order.findMany({ distinct: ["state"], select: { state: true }, orderBy: { state: "asc" } }),
   ]);
 
   const href = (over: Record<string, string | undefined>) => {
     const p = new URLSearchParams();
-    const merged = { tab: tab.key, q, ...over };
-    for (const [k, v] of Object.entries(merged)) if (v && !(k === "tab" && v === "all")) p.set(k, v);
+    const merged = { tab: tab.key, q, status: statusF, address: addressF, payment: paymentF, sr: channelF, state: stateF, from: sp.from, to: sp.to, sort: sortKey, ...over };
+    for (const [k, v] of Object.entries(merged)) if (v && !(k === "tab" && v === "all") && !(k === "sort" && v === "num_desc")) p.set(k, v);
     const s = p.toString();
     return s ? `/?${s}` : "/";
   };
@@ -62,10 +90,29 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
         ))}
       </nav>
 
-      <form action="/" style={{ marginBottom: 14 }}>
+      <form action="/" className="filters" aria-label="Filter orders">
         {tab.key !== "all" && <input type="hidden" name="tab" value={tab.key} />}
-        <input name="q" defaultValue={q} placeholder="Search order, customer or phone" aria-label="Search orders" style={{ padding: "8px 10px", border: "1px solid var(--rule-strong)", borderRadius: "var(--radius)", width: 320, maxWidth: "100%" }} />
+        <div className="field"><label htmlFor="f-q">Search</label><input id="f-q" name="q" defaultValue={q} placeholder="Order, customer, phone, city, pincode" /></div>
+        <div className="field"><label htmlFor="f-status">OrderAI status</label>
+          <select id="f-status" name="status" defaultValue={statusF ?? ""}><option value="">Any</option>{Object.entries(STATUS_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+        <div className="field"><label htmlFor="f-address">Address</label>
+          <select id="f-address" name="address" defaultValue={addressF ?? ""}><option value="">Any</option>{Object.entries(ADDRESS_LABEL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+        <div className="field"><label htmlFor="f-payment">Payment</label>
+          <select id="f-payment" name="payment" defaultValue={paymentF ?? ""}><option value="">Any</option><option value="COD">Cash on delivery</option><option value="PREPAID">Prepaid</option></select></div>
+        <div className="field"><label htmlFor="f-sr">Shiprocket status</label>
+          <select id="f-sr" name="sr" defaultValue={channelF ?? ""}><option value="">Any</option>{channels.map((c) => <option key={c.channelStatus} value={c.channelStatus}>{c.channelStatus}</option>)}</select></div>
+        <div className="field"><label htmlFor="f-state">State</label>
+          <select id="f-state" name="state" defaultValue={stateF ?? ""}><option value="">Any</option>{states.map((c) => <option key={c.state} value={c.state}>{c.state}</option>)}</select></div>
+        <div className="field"><label htmlFor="f-from">Ordered from</label><input id="f-from" name="from" type="date" defaultValue={sp.from ?? ""} /></div>
+        <div className="field"><label htmlFor="f-to">Ordered to</label><input id="f-to" name="to" type="date" defaultValue={sp.to ?? ""} /></div>
+        <div className="field"><label htmlFor="f-sort">Sort by</label>
+          <select id="f-sort" name="sort" defaultValue={sortKey}>{Object.entries(SORTS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}</select></div>
+        <div className="filters-actions">
+          <button className="btn small">Apply</button>
+          {(activeFilters > 0 || q) && <Link className="linklike" href={tab.key === "all" ? "/" : `/?tab=${tab.key}`}>Clear filters</Link>}
+        </div>
       </form>
+      <p className="muted" style={{ fontSize: 13, margin: "0 0 12px" }}>{total} {total === 1 ? "order" : "orders"}{activeFilters > 0 ? ` match ${activeFilters} ${activeFilters === 1 ? "filter" : "filters"}` : ""}. Sorted by {SORTS[sortKey].label.toLowerCase()}.</p>
 
       {rows.length === 0 ? (
         <p className="sub" style={{ padding: "32px 0" }}>
@@ -90,7 +137,7 @@ export default async function OrdersPage({ searchParams }: { searchParams: Promi
                       <span className="sec">{dateTime(o.orderedAt)}</span>
                       <span className="sec">{items}</span>
                     </td>
-                    <td>{o.customerName}<span className="sec">{maskPhone(o.phone)}</span></td>
+                    <td>{o.customerName}<span className="sec"><a href={`tel:+91${o.phone.replace(/\D/g, "").slice(-10)}`}>{o.phone.replace(/\D/g, "").slice(-10) || o.phone}</a></span></td>
                     <td style={{ maxWidth: 280 }}>
                       <span title={ADDRESS_LABEL[o.addressStatus]}><AddressTag status={o.addressStatus} /></span>
                       <span className="sec">{[o.address1, o.city, o.pincode].filter(Boolean).join(", ")}</span>

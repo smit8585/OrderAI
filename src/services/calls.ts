@@ -2,6 +2,7 @@ import type { CallOutcome, CallStatus, Prisma } from "@prisma/client";
 import { db, getSettings } from "@/lib/db";
 import { log, errMessage } from "@/lib/logger";
 import { addressStatusFor } from "@/domain/address";
+import { silenceWaitMs } from "@/domain/orderno";
 import { opening, step, summarise, initialState, type AgentCtx, type ScriptState, type Turn, type Lang } from "@/domain/agent";
 import { updateAddress } from "@/integrations/shiprocket";
 import { placePhoneCall } from "@/integrations/voice";
@@ -50,7 +51,7 @@ async function load(callId: string): Promise<Session | null> {
 const save = (callId: string, s: Session) =>
   db.keyValue.upsert({ where: { key: key(callId) }, update: { value: s as unknown as Prisma.InputJsonValue }, create: { key: key(callId), value: s as unknown as Prisma.InputJsonValue } });
 
-export async function startBrowserCall(orderId: string): Promise<{ callId: string; text: string; lang: Lang }> {
+export async function startBrowserCall(orderId: string): Promise<{ callId: string; text: string; lang: Lang; waitMs: number }> {
   const o = await claim(orderId);
   const settings = await getSettings();
   const lang: Lang = settings.language === "hi" ? "hi" : "en";
@@ -59,10 +60,10 @@ export async function startBrowserCall(orderId: string): Promise<{ callId: strin
   const text = opening(ctx);
   await save(call.id, { state: initialState(), turns: [{ who: "agent", text }], ctx });
   await addEvent(orderId, "CALL_PLACED", "Voice call started in the browser.");
-  return { callId: call.id, text, lang };
+  return { callId: call.id, text, lang, waitMs: silenceWaitMs("CONFIRM_ORDER") };
 }
 
-export async function browserCallTurn(callId: string, text: string): Promise<{ reply: string; done: boolean }> {
+export async function browserCallTurn(callId: string, text: string): Promise<{ reply: string; done: boolean; waitMs: number }> {
   const s = await load(callId);
   if (!s) throw new Error("This call is not active.");
   const r = step(s.state, text, s.ctx);
@@ -70,7 +71,7 @@ export async function browserCallTurn(callId: string, text: string): Promise<{ r
   s.state = r.state;
   await save(callId, s);
   if (r.done) await endBrowserCall(callId);
-  return { reply: r.reply, done: !!r.done };
+  return { reply: r.reply, done: !!r.done, waitMs: silenceWaitMs(r.state.phase) };
 }
 
 export async function endBrowserCall(callId: string): Promise<{ outcome: CallOutcome; summary: string }> {

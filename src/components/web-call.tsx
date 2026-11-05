@@ -50,6 +50,12 @@ export function WebCallPanel({ orderId, onClose }: { orderId: string; onClose: (
   const interruptRef = useRef(false);
   const speakingRef = useRef(false);
   const langRef = useRef<"en" | "hi">("en");
+  const waitRef = useRef(1600);
+  const bufRef = useRef("");
+  const partialRef = useRef("");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const idleCount = useRef(0);
   const audio = useRef<{ ctx: AudioContext; stream: MediaStream; raf: number } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const submitRef = useRef<(t: string) => void>(() => {});
@@ -67,8 +73,16 @@ export function WebCallPanel({ orderId, onClose }: { orderId: string; onClose: (
   }, []);
   useEffect(() => { endRef.current?.scrollIntoView({ block: "end" }); }, [lines]);
 
+  function clearTimers() {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (idleRef.current) clearTimeout(idleRef.current);
+    timerRef.current = null;
+    idleRef.current = null;
+  }
+
   function teardown() {
     live.current = false;
+    clearTimers();
     try { rec.current?.abort(); } catch { /* not running */ }
     window.speechSynthesis?.cancel();
     const a = audio.current;
@@ -136,22 +150,32 @@ export function WebCallPanel({ orderId, onClose }: { orderId: string; onClose: (
       // While the agent talks the mic is ignored, unless interrupting is on and the person clearly says something.
       const talking = speakingRef.current;
       if (talking && !interruptRef.current) return;
-      let finalText = "";
+      if (phaseRef.current === "thinking") return;
       let partial = "";
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const res = e.results[i];
-        if (res.isFinal) finalText += res[0].transcript;
+        if (res.isFinal) bufRef.current = `${bufRef.current} ${res[0].transcript}`.trim();
         else partial += res[0].transcript;
       }
-      if (talking && (finalText || partial).trim().split(/\s+/).length >= 2) {
+      partialRef.current = partial;
+      const heard = `${bufRef.current} ${partial}`.trim();
+      if (talking && heard.split(/\s+/).length >= 2) {
         window.speechSynthesis.cancel();
         speakingRef.current = false;
       }
-      setInterim(partial);
-      if (finalText.trim() && phaseRef.current !== "thinking") {
+      if (!heard) return;
+      setInterim(heard);
+      if (idleRef.current) clearTimeout(idleRef.current);
+      idleCount.current = 0;
+      // The browser ends a phrase at every short pause. Wait for a real silence before the agent answers.
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => {
+        const text = `${bufRef.current} ${partialRef.current}`.trim();
+        bufRef.current = "";
+        partialRef.current = "";
         setInterim("");
-        submitRef.current(finalText.trim());
-      }
+        if (text) submitRef.current(text);
+      }, waitRef.current);
     };
     r.onerror = (e) => {
       if (e.error === "not-allowed" || e.error === "service-not-allowed") {
@@ -166,22 +190,49 @@ export function WebCallPanel({ orderId, onClose }: { orderId: string; onClose: (
     try { r.start(); } catch { /* already running */ }
   }, []);
 
+  const armIdle = useCallback(() => {
+    if (idleRef.current) clearTimeout(idleRef.current);
+    idleRef.current = setTimeout(() => {
+      if (!live.current || phaseRef.current !== "listening") return;
+      idleCount.current += 1;
+      if (idleCount.current >= 2) {
+        // Nobody answered twice: end the call as unanswered.
+        const id = callRef.current;
+        finish();
+        if (id) void post(`/api/calls/${id}/end`);
+        return;
+      }
+      go("speaking");
+      speak(langRef.current === "hi" ? "हेलो, क्या आप सुन रहे हैं?" : "Hello, are you still there?", () => {
+        if (!live.current) return;
+        go("listening");
+        armIdle();
+      });
+    }, 15000);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finish, speak]);
+
   const afterAgent = useCallback((done: boolean) => {
     if (done) return finish();
+    bufRef.current = "";
+    partialRef.current = "";
     go("listening");
-  }, [finish]);
+    armIdle();
+  }, [finish, armIdle]);
 
   const submit = useCallback(async (text: string) => {
     const id = callRef.current;
     if (!id || !text.trim() || phaseRef.current === "ended") return;
     window.speechSynthesis?.cancel();
     speakingRef.current = false;
+    clearTimers();
     setLines((l) => [...l, { who: "customer", text }]);
     go("thinking");
     const r = await post(`/api/calls/${id}/turn`, { text });
     if (!r.ok) { setMsg(String(r.data.error ?? "The call dropped.")); return finish(); }
     const reply = String(r.data.reply);
     const done = Boolean(r.data.done);
+    if (typeof r.data.waitMs === "number") waitRef.current = r.data.waitMs;
     setLines((l) => [...l, { who: "agent", text: reply }]);
     go("speaking");
     speak(reply, () => afterAgent(done));
@@ -195,6 +246,7 @@ export function WebCallPanel({ orderId, onClose }: { orderId: string; onClose: (
     const id = String(r.data.callId);
     const text = String(r.data.text);
     langRef.current = r.data.lang === "hi" ? "hi" : "en";
+    if (typeof r.data.waitMs === "number") waitRef.current = r.data.waitMs;
     callRef.current = id;
     setCallId(id);
     live.current = true;

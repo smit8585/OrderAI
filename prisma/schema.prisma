@@ -81,6 +81,7 @@ model Order {
   id             String        @id @default(cuid())
   externalId     String        @unique // Shiprocket order id (or SAMPLE-n)
   orderName      String        // channel order id shown to the merchant
+  orderSeq       BigInt?       // digits of the order name, for sorting by order number
   customerName   String
   phone          String
   email          String?
@@ -110,6 +111,7 @@ model Order {
 
   @@index([status, orderedAt])
   @@index([addressStatus])
+  @@index([orderSeq])
 }
 
 model Call {

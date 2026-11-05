@@ -125,7 +125,7 @@ export function CallPanel({ orderId, phoneReady, label, autoOpen }: { orderId: s
           <p className="sub" style={{ marginBottom: 14 }}>
             {phoneReady
               ? "The voice agent phones the customer, confirms the order and the address, and reports back here."
-              : "Phone calls need the voice agent connected on the Connections page, and a telephony link to dial real numbers. Use the browser call to try the whole flow."}
+              : "Phone calls are not switched on yet. Inferex's voice agent talks over a live audio connection but does not dial phone numbers, so a calling service (Exotel, Plivo or similar) is needed in front of it. Use the browser voice call for now."}
           </p>
           <button
             className="btn"

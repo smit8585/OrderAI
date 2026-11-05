@@ -285,3 +285,8 @@ code, .code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-
 .pulse.speaking { background: #0b57d0; animation: pulse 0.7s ease-in-out infinite; }
 @keyframes pulse { 50% { transform: scale(1.6); opacity: .5; } }
 @media (prefers-reduced-motion: reduce) { .pulse { animation: none !important; } }
+
+.filters { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0 14px; align-items: end; margin-bottom: 8px; padding: 14px 14px 2px; border: 1px solid var(--rule); border-radius: var(--radius); background: var(--panel); }
+.filters .field { margin-bottom: 12px; }
+.filters .field label { font-size: 13px; color: var(--ink-2); }
+.filters-actions { display: flex; gap: 14px; align-items: center; margin-bottom: 12px; }

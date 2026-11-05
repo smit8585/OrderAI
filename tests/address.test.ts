@@ -26,3 +26,15 @@ describe("readPlatformFlag", () => {
     expect(addressStatusFor(good, {})).toMatchObject({ status: "VALID", source: "check" });
   });
 });
+
+import { parseOrderSeq, silenceWaitMs } from "../src/domain/orderno";
+describe("order numbers", () => {
+  it("pulls the number out of an order name", () => {
+    expect(parseOrderSeq("#1042")).toBe(1042n);
+    expect(parseOrderSeq("SR-2231")).toBe(2231n);
+    expect(parseOrderSeq("abc")).toBeNull();
+  });
+  it("waits longer for addresses", () => {
+    expect(silenceWaitMs("ASK_ADDRESS")).toBeGreaterThan(silenceWaitMs("CONFIRM_ORDER"));
+  });
+});

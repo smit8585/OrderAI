@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "@/lib/db";
 import { addressStatusFor } from "@/domain/address";
+import { parseOrderSeq } from "@/domain/orderno";
 import { listOrders } from "@/integrations/shiprocket";
 import { liveStatus } from "./connections";
 
@@ -24,6 +25,7 @@ export async function loadSampleOrders(): Promise<number> {
       data: {
         externalId,
         orderName: `#${1040 + i}`,
+        orderSeq: BigInt(1040 + i),
         customerName: s.name,
         phone: s.phone,
         address1: s.a1,
@@ -59,6 +61,7 @@ export async function syncOrders(): Promise<{ created: number; updated: number }
     const existing = await db.order.findUnique({ where: { externalId: o.externalId } });
     const base = {
       orderName: o.orderName,
+      orderSeq: parseOrderSeq(o.orderName),
       customerName: o.customerName,
       phone: o.phone,
       email: o.email ?? null,
